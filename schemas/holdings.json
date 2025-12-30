@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "isin": {"type": "string"},
+    "trading_symbol": {"type": "string"},
+    "quantity": {"type": "integer"},
+    "average_price": {"type": "number"},
+    "pledge_quantity": {"type": "number"},
+    "demat_locked_quantity": {"type": "number"},
+    "groww_locked_quantity": {"type": "number"},
+    "repledge_quantity": {"type": "number"},
+    "t1_quantity": {"type": "number"},
+    "demat_free_quantity": {"type": "number"},
+    "corporate_action_additional_quantity": {"type": "integer"},
+    "active_demat_transfer_quantity": {"type": "integer"}
+  }
+}

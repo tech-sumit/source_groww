@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "clear_cash": {"type": "number"},
+    "net_margin_used": {"type": "number"},
+    "brokerage_and_charges": {"type": "number"},
+    "collateral_used": {"type": "number"},
+    "collateral_available": {"type": "number"},
+    "adhoc_margin": {"type": "number"},
+    "fno_margin_details": {"type": "object"},
+    "equity_margin_details": {"type": "object"},
+    "commodity_margin_details": {"type": "object"}
+  }
+}

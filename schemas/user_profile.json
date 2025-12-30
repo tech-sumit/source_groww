@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "vendor_user_id": {"type": "string"},
+    "ucc": {"type": "string"},
+    "nse_enabled": {"type": "boolean"},
+    "bse_enabled": {"type": "boolean"},
+    "ddpi_enabled": {"type": "boolean"},
+    "active_segments": {"type": "array", "items": {"type": "string"}}
+  }
+}

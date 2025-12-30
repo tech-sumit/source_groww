@@ -1,0 +1,35 @@
+documentationUrl: https://groww.in/trade-api/docs
+connectionSpecification:
+  $schema: http://json-schema.org/draft-07/schema#
+  title: Groww Trade API Source Spec
+  type: object
+  additionalProperties: true
+  properties:
+    access_token:
+      type: string
+      title: Access Token
+      description: "Groww API access token. Either provide this OR use TOTP credentials below."
+      airbyte_secret: true
+      order: 0
+    totp_token:
+      type: string
+      title: TOTP Token
+      description: "TOTP Token from Groww API Keys page. Used with totp_secret to auto-generate access_token."
+      airbyte_secret: true
+      order: 1
+    totp_secret:
+      type: string
+      title: TOTP Secret
+      description: "TOTP Secret from Groww API Keys page. Used with totp_token to auto-generate access_token."
+      airbyte_secret: true
+      order: 2
+    segment:
+      type: string
+      title: Market Segment
+      description: "Market segment to fetch data for (CASH for equities, FNO for derivatives, COMMODITY for commodities)"
+      default: "CASH"
+      enum:
+        - "CASH"
+        - "FNO"
+        - "COMMODITY"
+      order: 3

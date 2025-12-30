@@ -1,0 +1,1281 @@
+version: "0.79.0"
+
+type: DeclarativeSource
+
+check:
+  type: CheckStream
+  stream_names:
+    - user_profile
+
+definitions:
+  # =====================
+  # SELECTORS
+  # =====================
+  
+  # Selector for nested payload with data_field
+  selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path:
+        - payload
+        - "{{ parameters.data_field }}"
+
+  # Selector for flat payload (single object response)
+  payload_selector:
+    type: RecordSelector
+    extractor:
+      type: DpathExtractor
+      field_path:
+        - payload
+
+  # =====================
+  # AUTHENTICATOR
+  # =====================
+  
+  authenticator:
+    type: BearerAuthenticator
+    api_token: "{{ config['access_token'] }}"
+
+  # =====================
+  # REQUESTERS
+  # =====================
+  
+  requester:
+    type: HttpRequester
+    url_base: "https://api.groww.in/v1"
+    http_method: "GET"
+    request_headers:
+      Accept: "application/json"
+      X-API-VERSION: "1.0"
+      Authorization: "Bearer {{ config['access_token'] }}"
+
+  # =====================
+  # RETRIEVERS
+  # =====================
+  
+  retriever:
+    type: SimpleRetriever
+    record_selector:
+      $ref: "#/definitions/selector"
+    requester:
+      $ref: "#/definitions/requester"
+
+  payload_retriever:
+    type: SimpleRetriever
+    record_selector:
+      $ref: "#/definitions/payload_selector"
+    requester:
+      $ref: "#/definitions/requester"
+
+  # =====================
+  # PAGINATORS
+  # =====================
+  
+  page_paginator:
+    type: DefaultPaginator
+    page_token_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: page
+    page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: page_size
+    pagination_strategy:
+      type: PageIncrement
+      page_size: 50
+      start_from_page: 0
+
+  # =====================
+  # BASE STREAMS
+  # =====================
+  
+  base_stream:
+    type: DeclarativeStream
+    retriever:
+      $ref: "#/definitions/retriever"
+
+  base_payload_stream:
+    type: DeclarativeStream
+    retriever:
+      $ref: "#/definitions/payload_retriever"
+
+  # =====================
+  # USER STREAMS
+  # =====================
+  
+  user_profile_stream:
+    type: DeclarativeStream
+    name: "user_profile"
+    description: "User profile information including trading capabilities and enabled segments"
+    primary_key:
+      - "vendor_user_id"
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+      requester:
+        type: HttpRequester
+        url_base: "https://api.groww.in/v1"
+        path: "/user/detail"
+        http_method: "GET"
+        authenticator:
+          type: ApiKeyAuthenticator
+          header: "Authorization"
+          api_token: "Bearer {{ config['access_token'] }}"
+        request_headers:
+          Accept: "application/json"
+          X-API-VERSION: "1.0"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          vendor_user_id:
+            type: string
+            description: "Unique identifier of the user"
+          ucc:
+            type: string
+            description: "Unique Client Code (UCC) of the user"
+          nse_enabled:
+            type: boolean
+            description: "Whether trading is enabled on NSE"
+          bse_enabled:
+            type: boolean
+            description: "Whether trading is enabled on BSE"
+          ddpi_enabled:
+            type: boolean
+            description: "DDPI (Demat Debit and Pledge Instruction) status"
+          active_segments:
+            type: array
+            items:
+              type: string
+            description: "List of trading segments active for the user"
+
+  # =====================
+  # PORTFOLIO STREAMS
+  # =====================
+  
+  holdings_stream:
+    type: DeclarativeStream
+    name: "holdings"
+    description: "Current stock holdings in user's DEMAT account"
+    primary_key:
+      - "isin"
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+            - holdings
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/holdings/user"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          isin:
+            type: string
+            description: "ISIN of the instrument"
+          trading_symbol:
+            type: string
+            description: "Trading symbol of the holding"
+          quantity:
+            type: integer
+            description: "Net quantity of the holding"
+          average_price:
+            type: number
+            description: "Average price in Rupees"
+          pledge_quantity:
+            type: number
+            description: "Pledged quantity"
+          demat_locked_quantity:
+            type: number
+            description: "Demat locked quantity"
+          groww_locked_quantity:
+            type: number
+            description: "Groww locked quantity"
+          repledge_quantity:
+            type: number
+            description: "Repledged quantity"
+          t1_quantity:
+            type: number
+            description: "T1 quantity"
+          demat_free_quantity:
+            type: number
+            description: "Demat free quantity"
+          corporate_action_additional_quantity:
+            type: integer
+            description: "Corporate action additional quantity"
+          active_demat_transfer_quantity:
+            type: integer
+            description: "Active demat transfer quantity"
+
+  positions_stream:
+    type: DeclarativeStream
+    name: "positions"
+    description: "User positions across segments"
+    primary_key:
+      - "trading_symbol"
+      - "exchange"
+      - "product"
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+            - positions
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/positions/user"
+        request_parameters:
+          segment: "{{ config.get('segment', 'CASH') }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          trading_symbol:
+            type: string
+            description: "Trading symbol of the instrument"
+          exchange:
+            type: string
+            description: "Stock exchange (NSE, BSE, MCX)"
+          symbol_isin:
+            type: string
+            description: "ISIN of the symbol"
+          quantity:
+            type: integer
+            description: "Net quantity of instruments"
+          product:
+            type: string
+            description: "Product type (CNC, MIS, NRML)"
+          credit_quantity:
+            type: integer
+            description: "Quantity of credited instruments"
+          credit_price:
+            type: number
+            description: "Average price of credited instruments"
+          debit_quantity:
+            type: integer
+            description: "Quantity of debited instruments"
+          debit_price:
+            type: number
+            description: "Average price of debited instruments"
+          carry_forward_credit_quantity:
+            type: integer
+            description: "Quantity of carry forward credited instruments"
+          carry_forward_credit_price:
+            type: number
+            description: "Average price of carry forward credited instruments"
+          carry_forward_debit_quantity:
+            type: integer
+            description: "Quantity of carry forward debited instruments"
+          carry_forward_debit_price:
+            type: number
+            description: "Average price of carry forward debited instruments"
+          net_carry_forward_quantity:
+            type: integer
+            description: "Net carry forward quantity"
+          net_price:
+            type: number
+            description: "Net average price"
+          net_carry_forward_price:
+            type: number
+            description: "Net average price of carry forward instruments"
+          realised_pnl:
+            type: number
+            description: "Realised profit and loss in Rupees"
+
+  # =====================
+  # MARGIN STREAMS
+  # =====================
+  
+  margin_stream:
+    type: DeclarativeStream
+    name: "margin"
+    description: "User's available margin details across segments"
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/margins/detail/user"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          clear_cash:
+            type: number
+            description: "Clear cash available"
+          net_margin_used:
+            type: number
+            description: "Net margin used"
+          brokerage_and_charges:
+            type: number
+            description: "Brokerage and charges"
+          collateral_used:
+            type: number
+            description: "Collateral used"
+          collateral_available:
+            type: number
+            description: "Collateral available"
+          adhoc_margin:
+            type: number
+            description: "Adhoc margin available"
+          fno_margin_details:
+            type: object
+            properties:
+              net_fno_margin_used:
+                type: number
+              span_margin_used:
+                type: number
+              exposure_margin_used:
+                type: number
+              future_balance_available:
+                type: number
+              option_buy_balance_available:
+                type: number
+              option_sell_balance_available:
+                type: number
+          equity_margin_details:
+            type: object
+            properties:
+              net_equity_margin_used:
+                type: number
+              cnc_margin_used:
+                type: number
+              mis_margin_used:
+                type: number
+              cnc_balance_available:
+                type: number
+              mis_balance_available:
+                type: number
+          commodity_margin_details:
+            type: object
+            properties:
+              commodity_span_margin:
+                type: number
+              commodity_exposure_margin:
+                type: number
+              commodity_tender_margin:
+                type: number
+              commodity_special_margin:
+                type: number
+              commodity_additional_margin:
+                type: number
+              commodity_unrealised_m2m:
+                type: number
+              commodity_realised_m2m:
+                type: number
+
+  # =====================
+  # ORDER STREAMS
+  # =====================
+  
+  orders_stream:
+    type: DeclarativeStream
+    name: "orders"
+    description: "Order history for the day including open, pending, and executed orders"
+    primary_key:
+      - "groww_order_id"
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+            - order_list
+      paginator:
+        $ref: "#/definitions/page_paginator"
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/order/list"
+        request_parameters:
+          segment: "{{ config.get('segment', 'CASH') }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          groww_order_id:
+            type: string
+            description: "Order ID generated by Groww"
+          trading_symbol:
+            type: string
+            description: "Trading symbol of the instrument"
+          order_status:
+            type: string
+            description: "Current status of the order"
+            enum:
+              - NEW
+              - ACKED
+              - TRIGGER_PENDING
+              - APPROVED
+              - REJECTED
+              - FAILED
+              - EXECUTED
+              - DELIVERY_AWAITED
+              - CANCELLED
+              - CANCELLATION_REQUESTED
+              - MODIFICATION_REQUESTED
+              - COMPLETED
+          remark:
+            type: string
+            description: "Remark for the order"
+          quantity:
+            type: integer
+            description: "Quantity ordered"
+          price:
+            type: number
+            description: "Price in Rupees (for Limit orders)"
+          trigger_price:
+            type: number
+            description: "Trigger price in Rupees"
+          filled_quantity:
+            type: integer
+            description: "Quantity executed"
+          remaining_quantity:
+            type: integer
+            description: "Quantity remaining to be filled"
+          average_fill_price:
+            type: number
+            description: "Average execution price"
+          deliverable_quantity:
+            type: integer
+            description: "Deliverable quantity"
+          amo_status:
+            type: string
+            description: "After market order status"
+            enum:
+              - NA
+              - PENDING
+              - DISPATCHED
+              - PARKED
+              - PLACED
+              - FAILED
+              - MARKET
+          validity:
+            type: string
+            description: "Order validity"
+          exchange:
+            type: string
+            description: "Stock exchange"
+            enum:
+              - NSE
+              - BSE
+              - MCX
+          order_type:
+            type: string
+            description: "Order type"
+            enum:
+              - LIMIT
+              - MARKET
+              - SL
+              - SL_M
+          transaction_type:
+            type: string
+            description: "Transaction type"
+            enum:
+              - BUY
+              - SELL
+          segment:
+            type: string
+            description: "Market segment"
+            enum:
+              - CASH
+              - FNO
+              - COMMODITY
+          product:
+            type: string
+            description: "Product type"
+            enum:
+              - CNC
+              - MIS
+              - NRML
+          created_at:
+            type: string
+            description: "Order creation timestamp"
+          exchange_time:
+            type: string
+            description: "Exchange order timestamp"
+          trade_date:
+            type: string
+            description: "Trade date"
+          order_reference_id:
+            type: string
+            description: "User-provided reference ID"
+
+  # =====================
+  # SMART ORDER STREAMS
+  # =====================
+  
+  smart_orders_stream:
+    type: DeclarativeStream
+    name: "smart_orders"
+    description: "Smart orders (GTT and OCO) list"
+    primary_key:
+      - "smart_order_id"
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+            - orders
+      paginator:
+        $ref: "#/definitions/page_paginator"
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/order-advance/list"
+        request_parameters:
+          segment: "{{ config.get('segment', 'CASH') }}"
+          smart_order_type: "{{ config.get('smart_order_type', 'GTT') }}"
+          status: "{{ config.get('smart_order_status', 'ACTIVE') }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          smart_order_id:
+            type: string
+            description: "Smart order identifier"
+          smart_order_type:
+            type: string
+            description: "Smart order type (GTT or OCO)"
+            enum:
+              - GTT
+              - OCO
+          status:
+            type: string
+            description: "Smart order status"
+            enum:
+              - ACTIVE
+              - CANCELLED
+              - COMPLETED
+              - TRIGGERED
+          trading_symbol:
+            type: string
+            description: "Trading symbol"
+          exchange:
+            type: string
+            description: "Stock exchange"
+          quantity:
+            type: integer
+            description: "Order quantity"
+          product_type:
+            type: string
+            description: "Product type"
+          duration:
+            type: string
+            description: "Order validity"
+          trigger_price:
+            type: string
+            description: "Trigger price (for GTT)"
+          trigger_direction:
+            type: string
+            description: "Trigger direction (UP/DOWN)"
+          order:
+            type: object
+            description: "Order details for GTT"
+            properties:
+              order_type:
+                type: string
+              price:
+                type: string
+              transaction_type:
+                type: string
+          target:
+            type: object
+            description: "Target leg details for OCO"
+            properties:
+              trigger_price:
+                type: string
+              order_type:
+                type: string
+              price:
+                type: string
+          stop_loss:
+            type: object
+            description: "Stop-loss leg details for OCO"
+            properties:
+              trigger_price:
+                type: string
+              order_type:
+                type: string
+              price:
+                type: string
+          is_cancellation_allowed:
+            type: boolean
+          is_modification_allowed:
+            type: boolean
+          created_at:
+            type: string
+            description: "Creation timestamp"
+          expire_at:
+            type: string
+            description: "Expiry timestamp"
+          triggered_at:
+            type: string
+            description: "Trigger timestamp"
+          updated_at:
+            type: string
+            description: "Last update timestamp"
+
+  # =====================
+  # LIVE DATA STREAMS
+  # =====================
+  
+  live_quote_stream:
+    type: DeclarativeStream
+    name: "live_quote"
+    description: "Live market quote for an instrument"
+    primary_key: []
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/live-data/quote"
+        request_parameters:
+          exchange: "{{ config['quote_exchange'] }}"
+          segment: "{{ config.get('segment', 'CASH') }}"
+          trading_symbol: "{{ config['quote_trading_symbol'] }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          average_price:
+            type: number
+            description: "Average price in Rupees"
+          bid_quantity:
+            type: integer
+            description: "Bid quantity"
+          bid_price:
+            type: number
+            description: "Bid price"
+          day_change:
+            type: number
+            description: "Day change in price"
+          day_change_perc:
+            type: number
+            description: "Day change percentage"
+          upper_circuit_limit:
+            type: number
+            description: "Upper circuit limit"
+          lower_circuit_limit:
+            type: number
+            description: "Lower circuit limit"
+          ohlc:
+            type: object
+            properties:
+              open:
+                type: number
+              high:
+                type: number
+              low:
+                type: number
+              close:
+                type: number
+          depth:
+            type: object
+            properties:
+              buy:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    price:
+                      type: number
+                    quantity:
+                      type: integer
+              sell:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    price:
+                      type: number
+                    quantity:
+                      type: integer
+          high_trade_range:
+            type: number
+          implied_volatility:
+            type: number
+          last_trade_quantity:
+            type: integer
+          last_trade_time:
+            type: integer
+            description: "Epoch milliseconds"
+          low_trade_range:
+            type: number
+          last_price:
+            type: number
+            description: "Last traded price"
+          market_cap:
+            type: number
+          offer_price:
+            type: number
+          offer_quantity:
+            type: integer
+          oi_day_change:
+            type: number
+            description: "Open interest day change"
+          oi_day_change_percentage:
+            type: number
+          open_interest:
+            type: number
+          previous_open_interest:
+            type: number
+          total_buy_quantity:
+            type: number
+          total_sell_quantity:
+            type: number
+          volume:
+            type: integer
+          week_52_high:
+            type: number
+          week_52_low:
+            type: number
+
+  # =====================
+  # HISTORICAL DATA / BACKTESTING STREAMS
+  # =====================
+  
+  historical_candles_stream:
+    type: DeclarativeStream
+    name: "historical_candles"
+    description: "Historical OHLCV candle data for backtesting"
+    primary_key: []
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+            - candles
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/historical/candles"
+        request_parameters:
+          exchange: "{{ config['historical_exchange'] }}"
+          segment: "{{ config.get('segment', 'CASH') }}"
+          groww_symbol: "{{ config['historical_groww_symbol'] }}"
+          start_time: "{{ config['historical_start_time'] }}"
+          end_time: "{{ config['historical_end_time'] }}"
+          candle_interval: "{{ config.get('candle_interval', '1day') }}"
+    transformations:
+      - type: AddFields
+        fields:
+          - path:
+              - timestamp
+            value: "{{ record[0] }}"
+          - path:
+              - open
+            value: "{{ record[1] }}"
+          - path:
+              - high
+            value: "{{ record[2] }}"
+          - path:
+              - low
+            value: "{{ record[3] }}"
+          - path:
+              - close
+            value: "{{ record[4] }}"
+          - path:
+              - volume
+            value: "{{ record[5] }}"
+          - path:
+              - open_interest
+            value: "{{ record[6] }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          timestamp:
+            type: string
+            description: "Candle timestamp"
+          open:
+            type: number
+            description: "Open price"
+          high:
+            type: number
+            description: "High price"
+          low:
+            type: number
+            description: "Low price"
+          close:
+            type: number
+            description: "Close price"
+          volume:
+            type: integer
+            description: "Trade volume"
+          open_interest:
+            type:
+              - number
+              - "null"
+            description: "Open interest (FNO only)"
+
+  expiries_stream:
+    type: DeclarativeStream
+    name: "expiries"
+    description: "Available expiry dates for derivatives instruments"
+    primary_key: []
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+            - expiries
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/historical/expiries"
+        request_parameters:
+          exchange: "{{ config.get('expiry_exchange', 'NSE') }}"
+          underlying_symbol: "{{ config['expiry_underlying_symbol'] }}"
+          year: "{{ config.get('expiry_year', '') }}"
+          month: "{{ config.get('expiry_month', '') }}"
+    transformations:
+      - type: AddFields
+        fields:
+          - path:
+              - expiry_date
+            value: "{{ record }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          expiry_date:
+            type: string
+            description: "Expiry date in YYYY-MM-DD format"
+
+  contracts_stream:
+    type: DeclarativeStream
+    name: "contracts"
+    description: "Available contract symbols for derivatives instruments"
+    primary_key: []
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+            - contracts
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/historical/contracts"
+        request_parameters:
+          exchange: "{{ config.get('contract_exchange', 'NSE') }}"
+          underlying_symbol: "{{ config['contract_underlying_symbol'] }}"
+          expiry_date: "{{ config['contract_expiry_date'] }}"
+    transformations:
+      - type: AddFields
+        fields:
+          - path:
+              - groww_symbol
+            value: "{{ record }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          groww_symbol:
+            type: string
+            description: "Groww symbol of the contract"
+
+  # =====================
+  # OPTION CHAIN STREAM
+  # =====================
+  
+  option_chain_stream:
+    type: DeclarativeStream
+    name: "option_chain"
+    description: "Option chain data with Greeks for FNO contracts"
+    primary_key: []
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - payload
+      requester:
+        $ref: "#/definitions/requester"
+        path: "/option-chain/exchange/{{ config['option_chain_exchange'] }}/underlying/{{ config['option_chain_underlying'] }}"
+        request_parameters:
+          expiry_date: "{{ config['option_chain_expiry_date'] }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $schema: http://json-schema.org/draft-07/schema#
+        type: object
+        properties:
+          underlying_ltp:
+            type: number
+            description: "Last traded price of the underlying"
+          strikes:
+            type: object
+            description: "Strike-wise option chain data"
+            additionalProperties:
+              type: object
+              properties:
+                CE:
+                  type: object
+                  properties:
+                    trading_symbol:
+                      type: string
+                    ltp:
+                      type: number
+                    open_interest:
+                      type: integer
+                    volume:
+                      type: integer
+                    greeks:
+                      type: object
+                      properties:
+                        delta:
+                          type: number
+                        gamma:
+                          type: number
+                        theta:
+                          type: number
+                        vega:
+                          type: number
+                        rho:
+                          type: number
+                        iv:
+                          type: number
+                PE:
+                  type: object
+                  properties:
+                    trading_symbol:
+                      type: string
+                    ltp:
+                      type: number
+                    open_interest:
+                      type: integer
+                    volume:
+                      type: integer
+                    greeks:
+                      type: object
+                      properties:
+                        delta:
+                          type: number
+                        gamma:
+                          type: number
+                        theta:
+                          type: number
+                        vega:
+                          type: number
+                        rho:
+                          type: number
+                        iv:
+                          type: number
+
+# =====================
+# STREAMS LIST
+# =====================
+
+streams:
+  - "#/definitions/user_profile_stream"
+  - "#/definitions/holdings_stream"
+  - "#/definitions/positions_stream"
+  - "#/definitions/margin_stream"
+  - "#/definitions/orders_stream"
+  - "#/definitions/smart_orders_stream"
+  - "#/definitions/live_quote_stream"
+  - "#/definitions/historical_candles_stream"
+  - "#/definitions/expiries_stream"
+  - "#/definitions/contracts_stream"
+  - "#/definitions/option_chain_stream"
+
+# =====================
+# CONNECTOR SPECIFICATION
+# =====================
+
+spec:
+  type: Spec
+  documentation_url: https://groww.in/trade-api/docs
+  connection_specification:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: Groww Trade API Source Spec
+    type: object
+    additionalProperties: true
+    properties:
+      # Authentication - Option 1: Direct Access Token
+      access_token:
+        type: string
+        title: Access Token
+        description: "Groww API access token. Either provide this OR use TOTP credentials below."
+        airbyte_secret: true
+        order: 0
+
+      # Authentication - Option 2: TOTP-based (auto-generates access_token)
+      totp_token:
+        type: string
+        title: TOTP Token
+        description: "TOTP Token from Groww API Keys page. Used with totp_secret to auto-generate access_token."
+        airbyte_secret: true
+        order: 1
+
+      totp_secret:
+        type: string
+        title: TOTP Secret
+        description: "TOTP Secret from Groww API Keys page. Used with totp_token to auto-generate access_token."
+        airbyte_secret: true
+        order: 2
+
+      # General Settings
+      segment:
+        type: string
+        title: Market Segment
+        description: "Market segment to fetch data for (CASH for equities, FNO for derivatives, COMMODITY for commodities)"
+        default: "CASH"
+        enum:
+          - "CASH"
+          - "FNO"
+          - "COMMODITY"
+        order: 1
+
+      # Smart Orders Settings
+      smart_order_type:
+        type: string
+        title: Smart Order Type
+        description: "Type of smart orders to fetch"
+        default: "GTT"
+        enum:
+          - "GTT"
+          - "OCO"
+        order: 2
+      
+      smart_order_status:
+        type: string
+        title: Smart Order Status
+        description: "Status filter for smart orders"
+        default: "ACTIVE"
+        enum:
+          - "ACTIVE"
+          - "CANCELLED"
+          - "COMPLETED"
+        order: 3
+
+      # Live Quote Settings
+      quote_exchange:
+        type: string
+        title: Quote Exchange
+        description: "Exchange for live quote (required for live_quote stream)"
+        default: "NSE"
+        enum:
+          - "NSE"
+          - "BSE"
+          - "MCX"
+        order: 4
+
+      quote_trading_symbol:
+        type: string
+        title: Quote Trading Symbol
+        description: "Trading symbol for live quote (e.g., NIFTY, RELIANCE). Required for live_quote stream."
+        examples:
+          - "NIFTY"
+          - "RELIANCE"
+          - "BANKNIFTY"
+        order: 5
+
+      # Historical Data Settings
+      historical_exchange:
+        type: string
+        title: Historical Data Exchange
+        description: "Exchange for historical data"
+        default: "NSE"
+        enum:
+          - "NSE"
+          - "BSE"
+          - "MCX"
+        order: 6
+
+      historical_groww_symbol:
+        type: string
+        title: Historical Groww Symbol
+        description: "Groww symbol for historical data (e.g., NSE-WIPRO, NSE-NIFTY-30Sep25-24650-CE)"
+        examples:
+          - "NSE-WIPRO"
+          - "NSE-NIFTY"
+          - "NSE-NIFTY-30Sep25-FUT"
+        order: 7
+
+      historical_start_time:
+        type: string
+        title: Historical Start Time
+        description: "Start time for historical data in 'YYYY-MM-DD HH:mm:ss' format"
+        examples:
+          - "2024-01-01 09:15:00"
+        order: 8
+
+      historical_end_time:
+        type: string
+        title: Historical End Time
+        description: "End time for historical data in 'YYYY-MM-DD HH:mm:ss' format"
+        examples:
+          - "2024-12-31 15:30:00"
+        order: 9
+
+      candle_interval:
+        type: string
+        title: Candle Interval
+        description: "Candle interval for historical data"
+        default: "1day"
+        enum:
+          - "1minute"
+          - "2minute"
+          - "3minute"
+          - "5minute"
+          - "10minute"
+          - "15minute"
+          - "30minute"
+          - "1hour"
+          - "4hour"
+          - "1day"
+          - "1week"
+          - "1month"
+        order: 10
+
+      # Expiries Settings
+      expiry_exchange:
+        type: string
+        title: Expiry Exchange
+        description: "Exchange for expiry dates lookup"
+        default: "NSE"
+        enum:
+          - "NSE"
+          - "BSE"
+        order: 11
+
+      expiry_underlying_symbol:
+        type: string
+        title: Expiry Underlying Symbol
+        description: "Underlying symbol for expiry dates (e.g., NIFTY, BANKNIFTY)"
+        examples:
+          - "NIFTY"
+          - "BANKNIFTY"
+          - "RELIANCE"
+        order: 12
+
+      expiry_year:
+        type: integer
+        title: Expiry Year
+        description: "Year for expiry dates lookup (2020 onwards). Leave empty for current year."
+        minimum: 2020
+        order: 13
+
+      expiry_month:
+        type: integer
+        title: Expiry Month
+        description: "Month for expiry dates lookup (1-12). Leave empty for full year."
+        minimum: 1
+        maximum: 12
+        order: 14
+
+      # Contracts Settings
+      contract_exchange:
+        type: string
+        title: Contract Exchange
+        description: "Exchange for contracts lookup"
+        default: "NSE"
+        enum:
+          - "NSE"
+          - "BSE"
+        order: 15
+
+      contract_underlying_symbol:
+        type: string
+        title: Contract Underlying Symbol
+        description: "Underlying symbol for contracts lookup"
+        examples:
+          - "NIFTY"
+          - "BANKNIFTY"
+        order: 16
+
+      contract_expiry_date:
+        type: string
+        title: Contract Expiry Date
+        description: "Expiry date for contracts in YYYY-MM-DD format"
+        examples:
+          - "2025-01-30"
+        order: 17
+
+      # Option Chain Settings
+      option_chain_exchange:
+        type: string
+        title: Option Chain Exchange
+        description: "Exchange for option chain data"
+        default: "NSE"
+        enum:
+          - "NSE"
+          - "BSE"
+        order: 18
+
+      option_chain_underlying:
+        type: string
+        title: Option Chain Underlying
+        description: "Underlying symbol for option chain (e.g., NIFTY, BANKNIFTY)"
+        examples:
+          - "NIFTY"
+          - "BANKNIFTY"
+        order: 19
+
+      option_chain_expiry_date:
+        type: string
+        title: Option Chain Expiry Date
+        description: "Expiry date for option chain in YYYY-MM-DD format"
+        examples:
+          - "2025-01-30"
+        order: 20

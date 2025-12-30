@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "trading_symbol": {"type": "string"},
+    "exchange": {"type": "string"},
+    "symbol_isin": {"type": "string"},
+    "quantity": {"type": "integer"},
+    "product": {"type": "string"},
+    "credit_quantity": {"type": "integer"},
+    "credit_price": {"type": "number"},
+    "debit_quantity": {"type": "integer"},
+    "debit_price": {"type": "number"},
+    "carry_forward_credit_quantity": {"type": "integer"},
+    "carry_forward_credit_price": {"type": "number"},
+    "carry_forward_debit_quantity": {"type": "integer"},
+    "carry_forward_debit_price": {"type": "number"},
+    "net_carry_forward_quantity": {"type": "integer"},
+    "net_price": {"type": "number"},
+    "net_carry_forward_price": {"type": "number"},
+    "realised_pnl": {"type": "number"}
+  }
+}
