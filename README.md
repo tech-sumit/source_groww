@@ -1,4 +1,4 @@
-# Groww Trade API - Airbyte Source Connector
+# <img width="150" height="50" alt="image" src="https://github.com/user-attachments/assets/ff1b7a30-79a8-426b-b647-5c40ca26798f" /> Groww Trade API - Airbyte Source Connector
 
 A custom Airbyte source connector for the [Groww Trade API](https://groww.in/trade-api/docs), enabling automated data extraction of trading data including holdings, positions, orders, and margin information.
 
