@@ -97,6 +97,7 @@ The connector respects Groww API rate limits. Refer to [Groww API Documentation]
 
 ## Support
 
+- **Developer**:  Sumit Agrawal - https://github.com/tech-sumit
 - **Groww API Documentation**: https://groww.in/trade-api/docs
 - **Airbyte Documentation**: https://docs.airbyte.com
 
