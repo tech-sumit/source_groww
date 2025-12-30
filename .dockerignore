@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*.so
+.git/
+.github/
+.gitignore
+.DS_Store
+*.md
+!README.md

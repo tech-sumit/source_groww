@@ -1,0 +1,4 @@
+airbyte-cdk>=0.50.0
+growwapi>=1.5.0
+pyotp>=2.9.0
+python-dotenv>=1.0.0
